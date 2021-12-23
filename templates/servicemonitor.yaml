@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    {{- include "kpi-rabbitmq.labels" . | nindent 4 }}
+  name: {{ .Values.global.name }}-servicemonitor
+  namespace: {{ .Values.global.namespace }}
+spec:
+  endpoints:
+  - honorLabels: true
+    interval: 15s
+    path: /metrics
+    targetPort: 15692
+    tlsConfig:
+      insecureSkipVerify: true
+  - honorLabels: true
+    interval: 15s
+    path: /metrics/per-object
+    targetPort: 15692
+    tlsConfig:
+      insecureSkipVerify: true
+  selector:
+    matchLabels:
+      service: external
+      {{- include "kpi-rabbitmq.selectorLabels" . | nindent 6 }}

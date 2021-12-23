@@ -1,0 +1,21 @@
+kind: Service
+apiVersion: v1
+metadata:
+  namespace: {{ .Values.global.namespace }}
+  name: {{ .Values.global.name }}-internal-service
+  labels:
+    {{- include "kpi-rabbitmq.labels" . | nindent 4 }}
+  annotations:
+    meta.helm.sh/release-name: {{ .Values.global.name }}
+    meta.helm.sh/release-namespace: {{ .Values.global.namespace }}
+spec:
+  clusterIP: None
+  ports:
+   - name: http
+     protocol: TCP
+     port: 15672
+   - name: amqp
+     protocol: TCP
+     port: 5672
+  selector:
+    {{- include "kpi-rabbitmq.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: {{ .Values.global.namespace }}
+  name: {{ .Values.global.name }}
+  labels:
+    {{- include "kpi-rabbitmq.labels" . | nindent 4 }}
+  annotations:
+    meta.helm.sh/release-name: {{ .Values.global.name }}
+    meta.helm.sh/release-namespace: {{ .Values.global.namespace }}
+spec:
+  serviceName: {{ .Values.global.name }}-internal-service
+  volumeClaimTemplates:
+  - metadata:
+      name: {{ .Values.global.name }}-data
+      namespace: {{ .Values.global.namespace }}
+    spec:
+      storageClassName: {{ .Values.storageClassName }}
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: {{ .Values.persistentVolumeStorage.data }}
+  - metadata:
+      name: {{ .Values.global.name }}-logs
+      namespace: {{ .Values.global.namespace }}
+    spec:
+      storageClassName: {{ .Values.storageClassName }}
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: {{ .Values.persistentVolumeStorage.logs }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:  {{- include "kpi-rabbitmq.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "kpi-rabbitmq.labels" . | nindent 8 }}
+      annotations:
+        external-dns.alpha.kubernetes.io/hostname: {{ .Values.global.name }}.{{ .Values.clusterName }}.k8s.megafon.ru
+        scheduler.alpha.kubernetes.io/affinity: >
+            {
+              "podAntiAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": [{
+                  "labelSelector": {
+                    "matchExpressions": [{
+                      "key": "app.kubernetes.io/name",
+                      "operator": "In",
+                      "values": ["{{ .Values.global.name }}"]
+                    }]
+                  },
+                  "topologyKey": "kubernetes.io/hostname"
+                }]
+              }
+            }
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 11200
+        fsGroup: 11200
+      containers:
+      - name: rabbitmq-k8s
+        image: docker.unixrepo.megafon.ru/library/rabbitmq:3.8.16
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "512m"
+          limits:
+            memory: "1024Mi"
+            cpu: "1024m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 11200
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/rabbitmq
+          - name: {{ .Values.global.name }}-data
+            mountPath: /var/lib/rabbitmq/mnesia
+          - mountPath: /var/log/rabbitmq
+            name: {{ .Values.global.name }}-logs
+        ports:
+          - name: http
+            protocol: TCP
+            containerPort: 15672
+          - name: amqp
+            protocol: TCP
+            containerPort: 5672
+          - name: prometheus
+            containerPort: 15692
+            protocol: TCP
+        livenessProbe:
+          exec:
+            command: ["rabbitmqctl", "status"]
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["rabbitmqctl", "status"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 10
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: HOSTNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: RABBITMQ_USE_LONGNAME
+            value: "true"
+          - name: RABBITMQ_NODENAME
+            value: "rabbit@$(HOSTNAME).{{ .Values.global.name }}-internal-service.$(NAMESPACE).svc.cluster.local"
+          - name: K8S_SERVICE_NAME
+            value: "{{ .Values.global.name }}-internal-service"
+          - name: RABBITMQ_ERLANG_COOKIE
+            value: "{{ .Values.global.name }}-cookie"
+          - name: HOSTNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Values.global.name }}-configmap
+            items:
+            - key: rabbitmq.conf
+              path: rabbitmq.conf
+            - key: enabled_plugins
+              path: enabled_plugins
+            - key: advanced.config
+              path: advanced.config
+        - name: {{ .Values.global.name }}-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.global.name }}-data
+        - name: {{ .Values.global.name }}-logs
+          persistentVolumeClaim:
+            claimName: {{ .Values.global.name }}-logs

@@ -1,0 +1,31 @@
+kind: Service
+apiVersion: v1
+metadata:
+  namespace: {{ .Values.global.namespace }}
+  name: {{ .Values.global.name }}-service
+  labels:
+    {{- include "kpi-rabbitmq.labels" . | nindent 4 }}
+    service: external
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.global.name }}.{{ .Values.clusterName }}.k8s.megafon.ru
+    meta.helm.sh/release-name: {{ .Values.global.name }}
+    meta.helm.sh/release-namespace: {{ .Values.global.namespace }}
+spec:
+  externalTrafficPolicy: Cluster
+  loadBalancerIP: {{ .Values.lbIp }}
+  ports:
+   - name: http
+     protocol: TCP
+     port: 15672
+     targetPort: 15672
+   - name: amqp
+     protocol: TCP
+     port: 5672
+     targetPort: 5672
+   - name: prometheus
+     port: 15692
+     protocol: TCP
+     targetPort: 15692
+  selector:
+    {{- include "kpi-rabbitmq.selectorLabels" . | nindent 4 }}
+  type: LoadBalancer
